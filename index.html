@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assessment admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+</head>
+<body>
+
+  <section id="login" class="login" hidden>
+    <div class="login-card">
+      <h1>Assessment admin</h1>
+      <p class="muted">Sign in with your work Google account.</p>
+      <div id="gbtn"></div>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <div id="app" class="app" hidden>
+    <aside class="rail">
+      <div class="brand">Assessments</div>
+      <nav id="nav" aria-label="Main"></nav>
+      <div class="me">
+        <div id="me-name" class="me-name"></div>
+        <div id="me-role" class="muted small"></div>
+        <button id="signout" class="btn ghost small">Sign out</button>
+      </div>
+    </aside>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header><h2 id="modal-title"></h2><button id="modal-x" class="btn ghost small" aria-label="Close">Close</button></header>
+      <div id="modal-body" class="modal-body"></div>
+      <footer id="modal-foot"></footer>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="core.js"></script>
+  <script src="view-questions.js"></script>
+  <script src="view-import.js"></script>
+  <script src="view-assessments.js"></script>
+  <script src="view-people.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="App.initAuth()"></script>
+</body>
+</html>
