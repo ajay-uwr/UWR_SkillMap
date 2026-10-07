@@ -139,3 +139,5 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   .filters, .grid2, .grid3, .rule { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.rail-link { color: var(--rail-text); font-size: .85rem; padding: .5rem 1.25rem; text-decoration: underline; }

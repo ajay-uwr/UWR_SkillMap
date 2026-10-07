@@ -180,7 +180,7 @@
   App.views.noaccess = {
     render() {
       $('#view').innerHTML = '<div class="page-head"><h1>Nothing here for your role yet</h1></div>' +
-        '<div class="panel"><p>The review queue for reviewers arrives in a later phase. Candidates take exams from the candidate page, not this admin site.</p></div>';
+        '<div class="panel"><p>The review queue for reviewers arrives in a later phase. Candidates take exams from the <a href="exam.html">candidate page</a>, not this admin site.</p></div>';
     }
   };
 

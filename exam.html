@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Online assessment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="exam.css">
+  <script src="config.js"></script>
+</head>
+<body class="exam-body">
+
+  <section id="s-login" class="center" hidden>
+    <div class="login-card">
+      <h1>Online assessment</h1>
+      <p class="muted">Sign in with your work Google account to see your assessments.</p>
+      <div id="gbtn"></div>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <section id="s-list" class="page" hidden>
+    <header class="topbar">
+      <strong>Your assessments</strong>
+      <span class="row"><span id="who" class="small"></span><button id="out" class="btn small ghost light">Sign out</button></span>
+    </header>
+    <main id="list" class="content"></main>
+  </section>
+
+  <section id="s-intro" class="page" hidden></section>
+
+  <section id="s-exam" class="exam" hidden>
+    <header class="xbar">
+      <div id="x-title" class="x-title"></div>
+      <div class="row">
+        <span id="x-sync" class="x-sync small" aria-live="polite"></span>
+        <div id="x-timer" class="timer" role="timer" aria-label="Time left"></div>
+      </div>
+    </header>
+    <nav id="x-tabs" class="tabs" aria-label="Sections"></nav>
+    <div class="xbody">
+      <main id="x-q" tabindex="-1"></main>
+      <aside id="x-side" aria-label="Question palette"></aside>
+    </div>
+    <footer class="xfoot">
+      <button id="b-prev" class="btn">Previous</button>
+      <button id="b-clear" class="btn">Clear response</button>
+      <button id="b-mark" class="btn">Mark for review &amp; next</button>
+      <button id="b-save" class="btn primary">Save &amp; next</button>
+      <span class="grow"></span>
+      <button id="b-submit" class="btn danger">Submit exam</button>
+    </footer>
+  </section>
+
+  <section id="s-done" class="center" hidden></section>
+
+  <div id="dlg" class="modal" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true">
+      <div id="dlg-body" class="modal-body"></div>
+      <footer id="dlg-foot"></footer>
+    </div>
+  </div>
+  <div id="ov" class="overlay" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="exam.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer onload="window.examInit()"></script>
+</body>
+</html>

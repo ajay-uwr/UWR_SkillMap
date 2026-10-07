@@ -2,7 +2,7 @@
 (function () {
   const { $, $$, esc, api, toast, badge, fmtDate } = App;
   const TYPES = App.QTYPES;
-  let E = null, topicList = [], tagList = [];
+  let E = null, topicList = [], tagList = [], attTimer = null;
 
   const blank = () => ({
     id: null, status: 'draft', title: '', description: '', instructions: '',
@@ -106,10 +106,16 @@
       fld('Email addresses', '<textarea id="a-emails" rows="6" placeholder="one per line">' + esc(E.emails) + '</textarea>', 'Only @' + esc(App.cfg.ALLOWED_DOMAIN) + ' accounts. People not yet in the system are added as candidates.') +
       fld('Attempts allowed each', '<input type="number" id="a-attempts" min="1" max="5" value="' + esc(E.attempts_allowed) + '">', 'You can grant a retake later.') + '</div>' +
       '<button class="btn" id="a-savecand"' + (E.id && E.status !== 'archived' ? '' : ' disabled') + '>Save candidates</button>' +
-      (E.id ? '' : ' <span class="muted small">Save the draft first.</span>') + '</div>';
+      (E.id ? '' : ' <span class="muted small">Save the draft first.</span>') + '</div>' +
+      (E.id && (E.status === 'published' || E.status === 'closed') ? '<div class="panel" id="att-panel"><p class="muted">Loading attempts...</p></div>' : '');
 
     drawSections();
     bindEditor();
+    clearInterval(attTimer);
+    if (E.id && (E.status === 'published' || E.status === 'closed')) {
+      loadAttempts();
+      attTimer = setInterval(loadAttempts, 20000);
+    }
   }
 
   function drawSections() {
@@ -232,6 +238,56 @@
       } catch (e) { showError(e.message); }
     };
     return btn ? App.busy(btn, run) : run();
+  }
+
+  // ---------- live attempts ----------
+  const ST = {
+    not_started: ['Not started', ''], in_progress: ['In progress', 'warn'], submitted: ['Submitted', 'info'],
+    pending_review: ['Needs review', 'warn'], graded: ['Auto-graded', 'ok']
+  };
+  const REASON = { candidate: 'by candidate', time: 'time up', violations: 'too many violations' };
+
+  async function loadAttempts() {
+    const box = $('#att-panel');
+    if (!box) { clearInterval(attTimer); return; }
+    try { drawAttempts(await api('listAttempts', { assessment_id: E.id })); }
+    catch (e) { box.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; }
+  }
+
+  function drawAttempts(r) {
+    const box = $('#att-panel');
+    if (!box) return;
+    const c = {};
+    r.rows.forEach((x) => { c[x.status] = (c[x.status] || 0) + 1; });
+    const link = new URL('exam.html', location.href).href;
+    box.innerHTML =
+      '<div class="row"><h3 class="grow" style="margin:0">Candidates and attempts</h3>' +
+      '<button class="btn small" id="att-refresh">Refresh</button><button class="btn small primary" id="att-process">Process submissions now</button></div>' +
+      '<p class="small muted" style="margin:.5rem 0">Candidate page: <a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link) + '</a> &middot; refreshes every 20 seconds</p>' +
+      '<p>' + Object.keys(ST).map((k) => '<span class="badge ' + ST[k][1] + '">' + ST[k][0] + ': ' + (c[k] || 0) + '</span>').join(' ') + '</p>' +
+      (r.rows.length ? '<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Status</th><th>Violations</th><th>Other flags</th><th>Started</th><th>Submitted</th><th>Auto score</th></tr></thead><tbody>' +
+        r.rows.map((x) => {
+          const st = ST[x.status] || [x.status, ''];
+          const other = Object.keys(x.flags).filter((k) => ['tab_hidden', 'window_blur', 'fullscreen_exit'].indexOf(k) < 0)
+            .map((k) => k.replace(/_/g, ' ') + ' x' + x.flags[k]).join(', ');
+          return '<tr><td>' + esc(x.name || x.email) + (x.name ? '<div class="muted small">' + esc(x.email) + '</div>' : '') + '</td>' +
+            '<td><span class="badge ' + st[1] + '">' + st[0] + '</span>' + (x.online ? ' <span class="badge ok">online</span>' : '') +
+            (x.reason ? '<div class="muted small">' + esc(REASON[x.reason] || x.reason) + '</div>' : '') + '</td>' +
+            '<td class="mono">' + (x.violations ? '<strong class="error">' + x.violations + '</strong>' : '0') + '</td>' +
+            '<td class="small">' + esc(other || '-') + '</td>' +
+            '<td>' + (x.started ? esc(App.fmtDate(x.started)) : '-') + '</td><td>' + (x.submitted ? esc(App.fmtDate(x.submitted)) : '-') + '</td>' +
+            '<td class="mono">' + (x.auto_max === null ? '-' : x.auto_score + ' / ' + x.auto_max) + (x.written_count ? '<div class="muted small">+ ' + x.written_count + ' written</div>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>'
+        : '<p class="muted">No candidates assigned.</p>') +
+      '<p class="muted small" style="margin-top:.6rem">Auto score covers single and multiple choice only. Written answers are graded in the next phase. Scores are never shown to candidates.</p>';
+    $('#att-refresh').onclick = (e) => App.busy(e.target, loadAttempts);
+    $('#att-process').onclick = (e) => App.busy(e.target, async () => {
+      try {
+        const res = await api('processSubmissions', { assessment_id: E.id });
+        toast(res.finalized + ' expired attempt(s) closed, ' + res.graded + ' graded.');
+        await loadAttempts();
+      } catch (err) { toast(err.message, true); }
+    });
   }
 
   // ---------- rule check and preview ----------
