@@ -65,6 +65,7 @@
     if (E.status === 'closed') actions = '<button class="btn" data-st="published">Reopen</button><button class="btn" data-st="archived">Archive</button>';
     if (E.status === 'archived') actions = '<button class="btn" data-st="closed">Unarchive</button>';
     if (E.status === 'draft' && E.id) actions += '<button class="btn ghost danger" data-st="archived">Archive</button>';
+    if (E.status === 'published' || E.status === 'closed') actions = '<button class="btn" id="a-dur">Change duration</button>' + actions;
 
     v.innerHTML =
       '<div class="page-head"><div><p class="small"><a href="#/assessments">All assessments</a></p><h1>' + esc(E.id ? E.title || 'Assessment' : 'New assessment') + '</h1>' +
@@ -80,7 +81,7 @@
       '<div class="panel"><h3>Schedule</h3><div class="grid3">' +
       fld('Window opens', '<input type="datetime-local" data-k="start_time" data-t="dt" value="' + App.toLocalInput(E.start_time) + '">', 'Time zone: ' + esc(tz)) +
       fld('Window closes', '<input type="datetime-local" data-k="end_time" data-t="dt" value="' + App.toLocalInput(E.end_time) + '">', 'Candidates can begin between these two times.') +
-      fld('Duration (minutes)', '<input type="number" min="1" max="300" data-k="duration_min" value="' + esc(E.duration_min) + '">', 'The window must be at least this long.') + '</div></div>' +
+      fld('Duration (minutes)', '<input type="number" min="1" max="300" data-k="duration_min" value="' + esc(E.duration_min) + '">', 'Total time for the whole exam, not per question. The window must be at least this long.') + '</div></div>' +
 
       '<div class="panel"><h3>Scoring and exam rules</h3><div class="grid3">' +
       fld('Pass mark (%)', '<input type="number" min="0" max="100" data-k="pass_mark" value="' + esc(E.pass_mark) + '">') +
@@ -166,6 +167,7 @@
     });
 
     $$('[data-st]').forEach((b) => (b.onclick = () => changeStatus(b.dataset.st, b)));
+    const dur = $('#a-dur'); if (dur) dur.onclick = () => changeDuration();
     const save = $('#a-save'); if (save) save.onclick = () => App.busy(save, () => saveAll().then((ok) => ok && toast('Draft saved.')));
     const pub = $('#a-publish'); if (pub) pub.onclick = () => confirmPublish();
     $('#a-check').onclick = (e) => App.busy(e.target, checkRules);
@@ -173,6 +175,27 @@
     $('#a-emails').oninput = (e) => { E.emails = e.target.value; };
     $('#a-attempts').oninput = (e) => { E.attempts_allowed = e.target.value; };
     const sc = $('#a-savecand'); sc.onclick = () => App.busy(sc, saveCandidates);
+  }
+
+  function changeDuration() {
+    const body = App.modal.open({
+      title: 'Change exam duration',
+      body: '<p>This is the total time for the whole exam. Anyone who starts from now gets the new time. People already taking the exam are given any extra time, and never less than they have.</p>' +
+        '<div class="field"><label for="dur-in">Duration (minutes)</label><input id="dur-in" type="number" min="1" max="300"></div>' +
+        '<p id="dur-err" class="error" role="alert" hidden></p>',
+      actions: [
+        { label: 'Cancel', onClick: () => App.modal.close() },
+        { label: 'Save', kind: 'primary', onClick: (b) => App.busy(b, async () => {
+          try {
+            const r = await api('setDuration', { assessment_id: E.id, duration_min: Number($('#dur-in', body).value) });
+            App.modal.close();
+            toast('Duration is now ' + r.duration_min + ' minutes' + (r.extended ? '. ' + r.extended + ' running attempt(s) extended.' : '.'));
+            await editorView(E.id);
+          } catch (e) { const el = $('#dur-err', body); el.textContent = e.message; el.hidden = false; }
+        }) }
+      ]
+    });
+    $('#dur-in', body).value = E.duration_min;
   }
 
   const emailList = () => E.emails.split(/[\s,;]+/).filter(Boolean);
@@ -263,6 +286,7 @@
     box.innerHTML =
       '<div class="row"><h3 class="grow" style="margin:0">Candidates and attempts</h3>' +
       '<button class="btn small" id="att-refresh">Refresh</button><button class="btn small primary" id="att-process">Process submissions now</button></div>' +
+      '<div class="row" style="margin-top:.6rem"><button class="btn small" id="att-exp-scores">Download scores (CSV)</button><button class="btn small" id="att-exp-written">Download written answers (CSV)</button></div>' +
       '<p class="small muted" style="margin:.5rem 0">Candidate page: <a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link) + '</a> &middot; refreshes every 20 seconds</p>' +
       '<p>' + Object.keys(ST).map((k) => '<span class="badge ' + ST[k][1] + '">' + ST[k][0] + ': ' + (c[k] || 0) + '</span>').join(' ') + '</p>' +
       (r.rows.length ? '<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Status</th><th>Violations</th><th>Other flags</th><th>Started</th><th>Submitted</th><th>Auto score</th></tr></thead><tbody>' +
@@ -270,7 +294,7 @@
           const st = ST[x.status] || [x.status, ''];
           const other = Object.keys(x.flags).filter((k) => ['tab_hidden', 'window_blur', 'fullscreen_exit'].indexOf(k) < 0)
             .map((k) => k.replace(/_/g, ' ') + ' x' + x.flags[k]).join(', ');
-          return '<tr><td>' + esc(x.name || x.email) + (x.name ? '<div class="muted small">' + esc(x.email) + '</div>' : '') + '</td>' +
+          return '<tr><td>' + esc(x.name || x.email) + '<div class="muted small">' + esc([x.designation, x.name ? x.email : ''].filter(Boolean).join(' | ')) + '</div></td>' +
             '<td><span class="badge ' + st[1] + '">' + st[0] + '</span>' + (x.online ? ' <span class="badge ok">online</span>' : '') +
             (x.reason ? '<div class="muted small">' + esc(REASON[x.reason] || x.reason) + '</div>' : '') + '</td>' +
             '<td class="mono">' + (x.violations ? '<strong class="error">' + x.violations + '</strong>' : '0') + '</td>' +
@@ -281,6 +305,8 @@
         : '<p class="muted">No candidates assigned.</p>') +
       '<p class="muted small" style="margin-top:.6rem">Auto score covers single and multiple choice only. Written answers are graded in the next phase. Scores are never shown to candidates.</p>';
     $('#att-refresh').onclick = (e) => App.busy(e.target, loadAttempts);
+    $('#att-exp-scores').onclick = (e) => App.busy(e.target, () => exportCsv('scores'));
+    $('#att-exp-written').onclick = (e) => App.busy(e.target, () => exportCsv('written'));
     $('#att-process').onclick = (e) => App.busy(e.target, async () => {
       try {
         const res = await api('processSubmissions', { assessment_id: E.id });
@@ -288,6 +314,39 @@
         await loadAttempts();
       } catch (err) { toast(err.message, true); }
     });
+  }
+
+  // ---------- CSV export ----------
+  const csvCell = (v) => {
+    if (typeof v === 'number') return String(v);
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; // stop Excel treating text as a formula
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const toCsv = (cols, rows) => '\uFEFF' + [cols.map((c) => c[1]).join(',')].concat(
+    rows.map((r) => cols.map((c) => csvCell(r[c[0]])).join(','))).join('\r\n');
+
+  async function exportCsv(kind) {
+    try {
+      const r = await api('exportResults', { assessment_id: E.id });
+      const slug = (r.title || 'assessment').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+      const when = (ms) => (ms ? new Date(ms).toLocaleString() : '');
+      if (kind === 'scores') {
+        if (!r.scores.length) return toast('No attempts yet.', true);
+        App.download(slug + '-scores.csv', toCsv([
+          ['email', 'Email'], ['name', 'Name'], ['designation', 'Designation'], ['attempt_no', 'Attempt'], ['status', 'Status'], ['submit_reason', 'Submitted by'],
+          ['started', 'Started'], ['submitted', 'Submitted at'], ['violations', 'Violations'], ['flags', 'Flags'],
+          ['auto_score', 'MCQ score'], ['auto_max', 'MCQ max'], ['auto_percent', 'MCQ %'], ['written_questions', 'Written questions']
+        ], r.scores.map((x) => Object.assign({}, x, { started: when(x.started), submitted: when(x.submitted) }))));
+      } else {
+        if (!r.written.length) return toast('No written answers yet.', true);
+        App.download(slug + '-written-answers.csv', toCsv([
+          ['email', 'Email'], ['name', 'Name'], ['designation', 'Designation'], ['attempt_no', 'Attempt'], ['section', 'Section'], ['question_id', 'Question ID'],
+          ['type', 'Type'], ['topic', 'Topic'], ['difficulty', 'Level'], ['marks', 'Max marks'], ['question', 'Question'],
+          ['rubric', 'Rubric'], ['model_answer', 'Model answer'], ['answer', 'Candidate answer']
+        ], r.written));
+      }
+    } catch (e) { toast(e.message, true); }
   }
 
   // ---------- rule check and preview ----------
