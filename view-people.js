@@ -25,10 +25,10 @@
       '<div><label for="pp-role">Role</label><select id="pp-role">' + roleOpts('creator') + '</select></div>' +
       '<button class="btn primary" id="pp-add">Add person</button></div>' +
       '<p class="hint muted small" id="pp-help" style="margin:.5rem 0 0"></p><p id="pp-err" class="error" role="alert" hidden></p></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Active</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>Email</th><th>Name</th><th>Designation</th><th>Role</th><th>Active</th></tr></thead><tbody>' +
       users.map((u) => {
         const me = u.email === App.user.email;
-        return '<tr data-email="' + esc(u.email) + '" data-name="' + esc(u.name) + '"><td>' + esc(u.email) + (me ? ' <span class="badge info">You</span>' : '') + '</td><td>' + esc(u.name) + '</td>' +
+        return '<tr data-email="' + esc(u.email) + '" data-name="' + esc(u.name) + '"><td>' + esc(u.email) + (me ? ' <span class="badge info">You</span>' : '') + '</td><td>' + esc(u.name) + '</td><td>' + esc(u.designation || '') + '</td>' +
           '<td><select class="pp-r" aria-label="Role for ' + esc(u.email) + '"' + (me ? ' disabled' : '') + '>' + roleOpts(u.role) + '</select></td>' +
           '<td><input type="checkbox" class="pp-a" aria-label="Active"' + (u.active ? ' checked' : '') + (me ? ' disabled' : '') + '></td></tr>';
       }).join('') + '</tbody></table></div>';
