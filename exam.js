@@ -7,7 +7,7 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const safeJson = (s) => { try { return s ? JSON.parse(s) : null; } catch (e) { return null; } };
   const fmt = (ms) => new Date(Number(ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-  const SCREENS = ['s-login', 's-list', 's-intro', 's-exam', 's-done'];
+  const SCREENS = ['s-login', 's-profile', 's-list', 's-intro', 's-exam', 's-done'];
   const isObj = (q) => q.type === 'mcq' || q.type === 'checkbox';
 
   let token = null, user = null, list = [], listTimer = null, listOffset = 0;
@@ -62,9 +62,39 @@
     try {
       user = await callAuth('whoami');
       $('#who').textContent = user.name || user.email;
-      loadList();
+      if (!user.designation) showProfile(true); else loadList();
     } catch (e) { showLogin(e.message); }
   }
+
+  // ---------- profile (required once) ----------
+  function showProfile(first) {
+    clearTimeout(listTimer);
+    $('#s-profile').innerHTML = '<div class="login-card"><h1>Your details</h1>' +
+      '<p class="muted">Please confirm who you are. These details identify you on your result.</p>' +
+      '<div class="field"><label for="pf-mail">Email</label><input id="pf-mail" disabled></div>' +
+      '<div class="field"><label for="pf-name">Full name</label><input id="pf-name" maxlength="80" autocomplete="name"></div>' +
+      '<div class="field"><label for="pf-des">Designation</label><input id="pf-des" maxlength="80" placeholder="For example: Robotics Trainer"></div>' +
+      '<p id="pf-err" class="error" role="alert" hidden></p>' +
+      '<div class="row"><button class="btn primary" id="pf-save">' + (first ? 'Save and continue' : 'Save') + '</button>' +
+      '<button class="btn" id="pf-cancel">' + (first ? 'Sign out' : 'Cancel') + '</button></div></div>';
+    $('#pf-mail').value = user.email || ''; $('#pf-name').value = user.name || ''; $('#pf-des').value = user.designation || '';
+    show('s-profile');
+    const err = (m) => { const e = $('#pf-err'); e.textContent = m; e.hidden = !m; };
+    $('#pf-cancel').onclick = () => { if (first) $('#out').click(); else loadList(); };
+    $('#pf-save').onclick = async (ev) => {
+      const name = $('#pf-name').value.trim(), des = $('#pf-des').value.trim();
+      if (name.length < 2) return err('Please enter your full name.');
+      if (des.length < 2) return err('Please enter your designation.');
+      err(''); ev.target.disabled = true;
+      try {
+        const r = await callAuth('saveProfile', { name: name, designation: des });
+        user.name = r.name; user.designation = r.designation;
+        $('#who').textContent = user.name;
+        loadList();
+      } catch (e) { err(e.message); ev.target.disabled = false; }
+    };
+  }
+  $('#prof').onclick = () => showProfile(false);
 
   $('#out').onclick = () => {
     if (window.google) google.accounts.id.disableAutoSelect();
@@ -81,7 +111,7 @@
   async function callAuth(action, payload) {
     let j;
     try { j = await post({ action: action, token: token, payload: payload || {} }); }
-    catch (e) { throw new Error('Could not reach the server. Check your connection and try again.'); }
+    catch (e) { throw new Error('Could not reach the server. Check your connection. If many people are starting at once, wait 10 seconds and try again.'); }
     if (j.ok) return j.data;
     if (j.code === 401) { sessionStorage.removeItem('idtoken'); token = null; showLogin('Your sign-in expired. Please sign in again.'); }
     const err = new Error(j.error || 'Something went wrong.'); err.code = j.code; throw err;
@@ -223,6 +253,7 @@
     X.active = true;
     show('s-exam');
     $('#x-title').textContent = X.title;
+    $('#x-who').textContent = user ? [user.name, user.designation, user.email].filter(Boolean).join(' | ') : '';
     X.cur = { s: 0, i: 0 };
     go(0, 0, true);
     tick(); clearInterval(X.tickId); X.tickId = setInterval(tick, 500);
