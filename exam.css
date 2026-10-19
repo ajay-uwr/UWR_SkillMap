@@ -20,7 +20,9 @@
 .exam { display: flex; flex-direction: column; height: 100vh; user-select: none; -webkit-user-select: none; }
 .exam textarea, .exam input { user-select: text; -webkit-user-select: text; }
 .xbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .55rem 1rem; background: var(--rail); color: #fff; }
+.x-left { min-width: 0; }
 .x-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.x-who { font-size: .8rem; color: #bcd0da; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .timer { font-variant-numeric: tabular-nums; font-size: 1.3rem; font-weight: 700; padding: .2rem .8rem; border-radius: var(--radius); background: rgba(255,255,255,.14); min-width: 7.5rem; text-align: center; }
 .timer.warn { background: #b87500; }
 .timer.danger { background: #b3261e; animation: pulse 1s infinite; }
