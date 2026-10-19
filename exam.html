@@ -22,10 +22,12 @@
     </div>
   </section>
 
+  <section id="s-profile" class="center" hidden></section>
+
   <section id="s-list" class="page" hidden>
     <header class="topbar">
       <strong>Your assessments</strong>
-      <span class="row"><span id="who" class="small"></span><button id="out" class="btn small ghost light">Sign out</button></span>
+      <span class="row"><span id="who" class="small"></span><button id="prof" class="btn small ghost light">Edit profile</button><button id="out" class="btn small ghost light">Sign out</button></span>
     </header>
     <main id="list" class="content"></main>
   </section>
@@ -34,7 +36,7 @@
 
   <section id="s-exam" class="exam" hidden>
     <header class="xbar">
-      <div id="x-title" class="x-title"></div>
+      <div class="x-left"><div id="x-title" class="x-title"></div><div id="x-who" class="x-who"></div></div>
       <div class="row">
         <span id="x-sync" class="x-sync small" aria-live="polite"></span>
         <div id="x-timer" class="timer" role="timer" aria-label="Time left"></div>
