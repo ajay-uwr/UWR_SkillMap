@@ -9,6 +9,7 @@
   const fmt = (ms) => new Date(Number(ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const SCREENS = ['s-login', 's-profile', 's-list', 's-intro', 's-exam', 's-done'];
   const isObj = (q) => q.type === 'mcq' || q.type === 'checkbox';
+  const LEVELS = { easy: 'Beginner', medium: 'Intermediate', hard: 'Advanced' };
 
   let token = null, user = null, list = [], listTimer = null, listOffset = 0;
 
@@ -306,7 +307,8 @@
     const q = curQ(), a = X.A[q.id], sec = X.sections[X.cur.s];
     a.visited = true; X.enteredAt = performance.now();
     const negTxt = isObj(q) && X.neg > 0 ? ' &middot; wrong answer: -' + (Math.round(q.marks * X.neg * 100) / 100) : '';
-    let h = '<div class="qhead"><span>Question ' + (X.cur.i + 1) + ' of ' + sec.questions.length + '</span>' +
+    let h = '<div class="qhead"><span>Question ' + (X.cur.i + 1) + ' of ' + sec.questions.length +
+      (LEVELS[q.difficulty] ? ' <span class="lvl lvl-' + q.difficulty + '">' + LEVELS[q.difficulty] + '</span>' : '') + '</span>' +
       '<span class="muted">' + q.marks + ' mark' + (q.marks === 1 ? '' : 's') + negTxt + '</span></div>' +
       '<div class="qtext">' + esc(q.text) + '</div>';
     if (q.image_url && /^https:\/\//i.test(q.image_url)) h += '<img class="qimg" alt="Figure for this question" src="' + esc(q.image_url) + '">';
@@ -365,7 +367,8 @@
       '<div class="legend"><span><i class="sw a"></i>' + c.a + ' Answered</span><span><i class="sw na"></i>' + c.na + ' Not answered</span>' +
       '<span><i class="sw nv"></i>' + c.nv + ' Not visited</span><span><i class="sw m"></i>' + c.m + ' Marked</span>' +
       '<span style="grid-column:1/3"><i class="sw am"></i>' + c.am + ' Answered &amp; marked for review</span></div>' +
-      '<p class="pal-title">' + esc(sec.name) + '</p><div class="palette">' + btns + '</div>';
+      '<p class="pal-title">' + esc(sec.name) + '</p><p class="muted small" style="margin:-.3rem 0 .6rem">' + sec.questions.length + ' question' + (sec.questions.length === 1 ? '' : 's') + ', ' +
+      Math.round(sec.questions.reduce((t, q) => t + q.marks, 0) * 100) / 100 + ' marks</p><div class="palette">' + btns + '</div>';
     document.querySelectorAll('#x-side .pq').forEach((b) => (b.onclick = () => go(X.cur.s, +b.dataset.i)));
   }
 

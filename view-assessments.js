@@ -2,7 +2,7 @@
 (function () {
   const { $, $$, esc, api, toast, badge, fmtDate } = App;
   const TYPES = App.QTYPES;
-  let E = null, topicList = [], tagList = [], attTimer = null;
+  let E = null, topicList = [], tagList = [], attTimer = null, bank = [];
 
   const blank = () => ({
     id: null, status: 'draft', title: '', description: '', instructions: '',
@@ -45,10 +45,17 @@
     v.innerHTML = '<p class="muted">Loading...</p>';
     try {
       const qs = await api('listQuestions');
+      bank = qs;
       const live = qs.filter((q) => q.status !== 'archived');
       topicList = Array.from(new Set(live.map((q) => q.topic))).sort();
       tagList = Array.from(new Set([].concat.apply([], live.map((q) => q.tags)))).sort();
       E = arg === 'new' ? blank() : fromServer(await api('getAssessment', { id: arg }));
+      if (arg === 'new' && App.pendingSet !== undefined) { // arrived from an import: set the sections up now
+        const plan = planFromBank(App.pendingSet, true);
+        if (plan.length) { E.sections = plan.map((p) => ({ name: p.name, rules: p.rules })); E.title = E.title || App.pendingSet; }
+        App.pendingSet = undefined;
+        if (plan.length) toast(plan.length + ' section' + (plan.length === 1 ? '' : 's') + ' created from your questions. Check the counts, then set the schedule.');
+      }
     } catch (e) { v.innerHTML = '<p class="error">' + esc(e.message) + '</p>'; return; }
     draw();
   }
@@ -94,7 +101,8 @@
       chk('human_review_all', 'Send every written answer to a human reviewer, not only doubtful ones') +
       '<p class="muted small" style="margin:.4rem 0 0">Results are held back until you release them.</p></div>' +
 
-      '<div class="panel"><div class="row"><h3 class="grow" style="margin:0">Sections and question rules</h3></div>' +
+      '<div class="panel"><div class="row"><h3 class="grow" style="margin:0">Sections and question rules</h3>' +
+      '<button class="btn small" data-act="auto-sec">Create sections from question bank</button></div>' +
       '<p class="muted small">Each rule draws random approved questions from the bank. Leave topic or tag empty to match anything.</p>' +
       '<datalist id="dl-topics">' + topicList.map((t) => '<option value="' + esc(t) + '">').join('') + '</datalist>' +
       '<datalist id="dl-tags">' + tagList.map((t) => '<option value="' + esc(t) + '">').join('') + '</datalist>' +
@@ -123,7 +131,7 @@
     const box = $('#sec-box');
     const opt = (o, cur) => o.map((x) => '<option value="' + x[0] + '"' + (String(cur) === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>').join('');
     const typeOpts = [['any', 'Any type']].concat(Object.entries(TYPES));
-    const diffOpts = [['any', 'Any level'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']];
+    const diffOpts = [['any', 'Any level'], ['easy', 'Beginner'], ['medium', 'Intermediate'], ['hard', 'Advanced']];
     box.innerHTML = E.sections.map((s, i) =>
       '<div class="section-box"><div class="row"><div class="grow"><label>Section name</label><input data-sk data-s="' + i + '" value="' + esc(s.name) + '"></div>' +
       '<button class="btn small ghost" data-act="up-sec" data-s="' + i + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="Move section up">Up</button>' +
@@ -154,6 +162,7 @@
     form.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
       if (!b) return;
+      if (b.dataset.act === 'auto-sec') { openAutoSections(); return; }
       const s = +b.dataset.s, r = +b.dataset.r, secs = E.sections;
       switch (b.dataset.act) {
         case 'add-sec': secs.push({ name: 'Section ' + (secs.length + 1), rules: [newRule()] }); break;
@@ -263,6 +272,67 @@
     return btn ? App.busy(btn, run) : run();
   }
 
+  // ---------- sections from the question bank ----------
+  const LEVEL_ORDER = ['easy', 'medium', 'hard'];
+  const setsInBank = () => {
+    const names = {};
+    bank.forEach((q) => q.tags.forEach((t) => { if (t.indexOf('set:') === 0) names[t.slice(4)] = true; }));
+    return Object.keys(names).sort();
+  };
+
+  /** One section per topic (in import order); a rule per level, or one rule for the whole topic. */
+  function planFromBank(setName, split) {
+    const tag = setName ? 'set:' + setName : '';
+    const pool = bank.filter((q) => q.status === 'approved' && (!tag || q.tags.indexOf(tag) >= 0));
+    const order = [], by = {};
+    pool.forEach((q) => {
+      const k = q.topic.toLowerCase();
+      if (!by[k]) { by[k] = { name: q.topic, qs: [] }; order.push(k); }
+      by[k].qs.push(q);
+    });
+    return order.map((k) => {
+      const g = by[k], counts = { easy: 0, medium: 0, hard: 0 };
+      g.qs.forEach((q) => { counts[q.difficulty] = (counts[q.difficulty] || 0) + 1; });
+      const rules = split
+        ? LEVEL_ORDER.filter((l) => counts[l]).map((l) => ({ type: 'any', topic: g.name, tag: tag, difficulty: l, count: Math.min(counts[l], 100) }))
+        : [{ type: 'any', topic: g.name, tag: tag, difficulty: 'any', count: Math.min(g.qs.length, 100) }];
+      return { name: g.name, rules: rules, counts: counts, total: g.qs.length };
+    });
+  }
+
+  function openAutoSections() {
+    const sets = setsInBank();
+    const body = App.modal.open({
+      title: 'Create sections from the question bank', wide: true,
+      body: '<p>Makes one section per topic, in the order the questions were imported, using every approved question it finds. Everyone then gets the same questions. You can lower the counts afterwards. This replaces the sections already below.</p>' +
+        '<div class="grid2"><div class="field"><label for="as-set">Question set</label><select id="as-set"><option value="">Whole question bank</option>' +
+        sets.map((s) => '<option value="' + esc(s) + '">' + esc(s) + '</option>').join('') + '</select>' +
+        (sets.length ? '' : '<div class="hint">No sets yet. Give a set name when you import questions to keep assessments apart.</div>') + '</div>' +
+        '<div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" id="as-split" checked> A separate rule for each level</label></div></div>' +
+        '<div id="as-prev"></div>',
+      actions: [
+        { label: 'Cancel', onClick: () => App.modal.close() },
+        { label: 'Create sections', kind: 'primary', onClick: () => {
+          const plan = planFromBank($('#as-set', body).value, $('#as-split', body).checked);
+          if (!plan.length) return;
+          E.sections = plan.map((p) => ({ name: p.name, rules: p.rules }));
+          if (!E.title && $('#as-set', body).value) E.title = $('#as-set', body).value;
+          App.modal.close(); draw();
+          toast(plan.length + ' section' + (plan.length === 1 ? '' : 's') + ' created. Check the counts below.');
+        } }
+      ]
+    });
+    const refresh = () => {
+      const plan = planFromBank($('#as-set', body).value, true);
+      $('#as-prev', body).innerHTML = plan.length
+        ? '<div class="table-wrap"><table><thead><tr><th>Section</th><th>Beginner</th><th>Intermediate</th><th>Advanced</th><th>Total</th></tr></thead><tbody>' +
+          plan.map((p) => '<tr><td>' + esc(p.name) + '</td><td class="mono">' + p.counts.easy + '</td><td class="mono">' + p.counts.medium + '</td><td class="mono">' + p.counts.hard + '</td><td class="mono"><strong>' + p.total + '</strong></td></tr>').join('') +
+          '</tbody></table></div><p class="muted small">' + plan.length + ' section' + (plan.length === 1 ? '' : 's') + ' found.</p>'
+        : '<p class="error">No approved questions found for this choice. Import some, or approve them in the question bank.</p>';
+    };
+    $('#as-set', body).onchange = refresh; refresh();
+  }
+
   // ---------- live attempts ----------
   const ST = {
     not_started: ['Not started', ''], in_progress: ['In progress', 'warn'], submitted: ['Submitted', 'info'],
@@ -286,7 +356,7 @@
     box.innerHTML =
       '<div class="row"><h3 class="grow" style="margin:0">Candidates and attempts</h3>' +
       '<button class="btn small" id="att-refresh">Refresh</button><button class="btn small primary" id="att-process">Process submissions now</button></div>' +
-      '<div class="row" style="margin-top:.6rem"><button class="btn small" id="att-exp-scores">Download scores (CSV)</button><button class="btn small" id="att-exp-written">Download written answers (CSV)</button></div>' +
+      '<div class="row" style="margin-top:.6rem"><button class="btn small" id="att-exp-scores">Download scores (CSV)</button><button class="btn small" id="att-exp-questions">Download question-wise marks (CSV)</button><button class="btn small" id="att-exp-written">Download written answers (CSV)</button></div>' +
       '<p class="small muted" style="margin:.5rem 0">Candidate page: <a href="' + esc(link) + '" target="_blank" rel="noopener">' + esc(link) + '</a> &middot; refreshes every 20 seconds</p>' +
       '<p>' + Object.keys(ST).map((k) => '<span class="badge ' + ST[k][1] + '">' + ST[k][0] + ': ' + (c[k] || 0) + '</span>').join(' ') + '</p>' +
       (r.rows.length ? '<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Status</th><th>Violations</th><th>Other flags</th><th>Started</th><th>Submitted</th><th>Auto score</th></tr></thead><tbody>' +
@@ -300,12 +370,14 @@
             '<td class="mono">' + (x.violations ? '<strong class="error">' + x.violations + '</strong>' : '0') + '</td>' +
             '<td class="small">' + esc(other || '-') + '</td>' +
             '<td>' + (x.started ? esc(App.fmtDate(x.started)) : '-') + '</td><td>' + (x.submitted ? esc(App.fmtDate(x.submitted)) : '-') + '</td>' +
-            '<td class="mono">' + (x.auto_max === null ? '-' : x.auto_score + ' / ' + x.auto_max) + (x.written_count ? '<div class="muted small">+ ' + x.written_count + ' written</div>' : '') + '</td></tr>';
+            '<td class="mono">' + (x.auto_max === null ? '-' : x.auto_score + ' / ' + x.auto_max) + (x.sections && x.sections.length ? '<div class="muted small">' + x.sections.map((s) => esc(s.name) + ' ' + s.score + '/' + s.max).join(' &middot; ') + '</div>' : '') +
+            (x.written_count ? '<div class="muted small">+ ' + x.written_count + ' written</div>' : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>'
         : '<p class="muted">No candidates assigned.</p>') +
       '<p class="muted small" style="margin-top:.6rem">Auto score covers single and multiple choice only. Written answers are graded in the next phase. Scores are never shown to candidates.</p>';
     $('#att-refresh').onclick = (e) => App.busy(e.target, loadAttempts);
     $('#att-exp-scores').onclick = (e) => App.busy(e.target, () => exportCsv('scores'));
+    $('#att-exp-questions').onclick = (e) => App.busy(e.target, () => exportCsv('questions'));
     $('#att-exp-written').onclick = (e) => App.busy(e.target, () => exportCsv('written'));
     $('#att-process').onclick = (e) => App.busy(e.target, async () => {
       try {
@@ -328,30 +400,55 @@
 
   async function exportCsv(kind) {
     try {
-      const r = await api('exportResults', { assessment_id: E.id });
+      const r = await api('exportResults', { assessment_id: E.id, kind: kind === 'questions' ? 'questions' : 'all' });
       const slug = (r.title || 'assessment').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
       const when = (ms) => (ms ? new Date(ms).toLocaleString() : '');
+      const pct = (s, m) => (m > 0 ? Math.round(s / m * 1000) / 10 : '');
+      const who = [['email', 'Email'], ['name', 'Name'], ['designation', 'Designation'], ['attempt_no', 'Attempt']];
       if (kind === 'scores') {
         if (!r.scores.length) return toast('No attempts yet.', true);
-        App.download(slug + '-scores.csv', toCsv([
-          ['email', 'Email'], ['name', 'Name'], ['designation', 'Designation'], ['attempt_no', 'Attempt'], ['status', 'Status'], ['submit_reason', 'Submitted by'],
-          ['started', 'Started'], ['submitted', 'Submitted at'], ['violations', 'Violations'], ['flags', 'Flags'],
-          ['auto_score', 'MCQ score'], ['auto_max', 'MCQ max'], ['auto_percent', 'MCQ %'], ['written_questions', 'Written questions']
-        ], r.scores.map((x) => Object.assign({}, x, { started: when(x.started), submitted: when(x.submitted) }))));
+        // one block of columns per section, plus one per level, built from whatever the papers contain
+        const names = [];
+        r.scores.forEach((x) => (x.sections || []).forEach((s) => { if (names.indexOf(s.name) < 0) names.push(s.name); }));
+        const secCols = [];
+        names.forEach((n, i) => secCols.push(['s' + i + '_score', n + ' score'], ['s' + i + '_max', n + ' out of'], ['s' + i + '_pct', n + ' %']));
+        const lvlCols = [];
+        ['easy', 'medium', 'hard'].forEach((l) => lvlCols.push(['l_' + l + '_score', App.levelName(l) + ' score'], ['l_' + l + '_max', App.levelName(l) + ' out of']));
+        const rows = r.scores.map((x) => {
+          const o = Object.assign({}, x, { started: when(x.started), submitted: when(x.submitted) });
+          (x.sections || []).forEach((s) => {
+            const i = names.indexOf(s.name);
+            o['s' + i + '_score'] = s.score; o['s' + i + '_max'] = s.max; o['s' + i + '_pct'] = pct(s.score, s.max);
+          });
+          if (x.levels) ['easy', 'medium', 'hard'].forEach((l) => { o['l_' + l + '_score'] = x.levels[l].score; o['l_' + l + '_max'] = x.levels[l].max; });
+          return o;
+        });
+        App.download(slug + '-scores.csv', toCsv(who.concat([
+          ['status', 'Status'], ['submit_reason', 'Submitted by'], ['started', 'Started'], ['submitted', 'Submitted at'],
+          ['violations', 'Violations'], ['flags', 'Flags'],
+          ['auto_score', 'MCQ total score'], ['auto_max', 'MCQ total out of'], ['auto_percent', 'MCQ total %']
+        ], secCols, lvlCols, [['total_marks', 'Marks in whole paper'], ['written_questions', 'Written questions']]), rows));
+      } else if (kind === 'questions') {
+        if (!r.questions.length) return toast('No submitted attempts yet.', true);
+        App.download(slug + '-question-wise-marks.csv', toCsv(who.concat([
+          ['section', 'Section'], ['question_id', 'Question ID'], ['level', 'Level'], ['marks', 'Marks'], ['question', 'Question'],
+          ['given', 'Answer given'], ['given_text', 'Answer given (text)'], ['correct', 'Correct answer'], ['correct_text', 'Correct answer (text)'],
+          ['result', 'Result'], ['score', 'Marks earned'], ['reasoning', 'Reasoning']
+        ]), r.questions.map((x) => Object.assign({}, x, { level: App.levelName(x.level) }))));
       } else {
         if (!r.written.length) return toast('No written answers yet.', true);
-        App.download(slug + '-written-answers.csv', toCsv([
-          ['email', 'Email'], ['name', 'Name'], ['designation', 'Designation'], ['attempt_no', 'Attempt'], ['section', 'Section'], ['question_id', 'Question ID'],
+        App.download(slug + '-written-answers.csv', toCsv(who.concat([
+          ['section', 'Section'], ['question_id', 'Question ID'],
           ['type', 'Type'], ['topic', 'Topic'], ['difficulty', 'Level'], ['marks', 'Max marks'], ['question', 'Question'],
           ['rubric', 'Rubric'], ['model_answer', 'Model answer'], ['answer', 'Candidate answer']
-        ], r.written));
+        ]), r.written.map((x) => Object.assign({}, x, { difficulty: App.levelName(x.difficulty) }))));
       }
     } catch (e) { toast(e.message, true); }
   }
 
   // ---------- rule check and preview ----------
   const ruleText = (r) => r.count + ' x ' + (r.type === 'any' ? 'any type' : TYPES[r.type]) + (r.topic ? ' in ' + r.topic : '') +
-    (r.tag ? ', tagged ' + r.tag : '') + (r.difficulty !== 'any' ? ', ' + r.difficulty : '');
+    (r.tag ? ', tagged ' + r.tag : '') + (r.difficulty !== 'any' ? ', ' + App.levelName(r.difficulty) : '');
 
   async function checkRules() {
     clearError();
@@ -360,8 +457,11 @@
       $('#check-out').innerHTML =
         '<p>' + (r.ok ? '<span class="badge ok">Every rule can be filled</span>' : '<span class="badge bad">Some rules cannot be filled</span>') +
         ' A sample paper has <strong>' + r.totalQuestions + '</strong> questions and <strong>' + r.totalMarks + '</strong> marks.</p>' +
-        '<p class="muted small">Marks can differ between candidates when the questions a rule draws from carry different marks.</p>' +
-        r.sections.map((s) => '<h3 style="margin-top:.8rem">' + esc(s.name) + '</h3>' + s.rules.map((rule) => {
+        (r.sections.some((s) => s.rules.some((x) => x.marks_vary))
+          ? '<p class="small" style="color:var(--warn)"><strong>Marks can differ between candidates in the sections marked below.</strong> Those rules pick fewer questions than are available, and the questions carry different marks. To give everyone the same total, use every question in that section (set the count to the number available).</p>'
+          : '<p class="muted small">Every candidate gets the same marks in each section.</p>') +
+        r.sections.map((s) => '<h3 style="margin-top:.8rem">' + esc(s.name) + ' <span class="muted small" style="font-weight:500">' + s.questions + ' question' + (s.questions === 1 ? '' : 's') + ', ' + s.marks + ' marks' +
+          (s.rules.some((x) => x.marks_vary) ? ' (varies)' : '') + '</span></h3>' + s.rules.map((rule) => {
           const why = rule.ok ? rule.matching + ' approved questions match'
             : rule.matching < rule.needed ? 'only ' + rule.matching + ' approved questions match'
               : 'matches overlap with other rules, only ' + rule.drawn + ' could be drawn';
@@ -376,8 +476,8 @@
       const r = await api('previewPaper', { sections: sectionsPayload() });
       const body = '<p>' + (r.ok ? '' : '<span class="badge bad">Some rules could not be filled</span> ') +
         r.totalQuestions + ' questions, ' + r.totalMarks + ' marks. <span class="muted">This is one random draw. Each candidate gets their own.</span></p>' +
-        r.sections.map((s) => '<h3>' + esc(s.name) + '</h3><div class="table-wrap" style="margin-bottom:1rem"><table><thead><tr><th>Type</th><th>Topic</th><th>Level</th><th>Marks</th><th>Question</th></tr></thead><tbody>' +
-          (s.questions.map((q) => '<tr><td>' + esc(TYPES[q.type]) + '</td><td>' + esc(q.topic) + '</td><td>' + esc(q.difficulty) + '</td><td class="mono">' + q.marks + '</td><td class="text-cell"><div class="clamp">' + esc(q.text) + '</div></td></tr>').join('') ||
+        r.sections.map((s) => '<h3>' + esc(s.name) + ' <span class="muted small" style="font-weight:500">' + s.questions.length + ' questions, ' + Math.round(s.questions.reduce((t, q) => t + q.marks, 0) * 100) / 100 + ' marks</span></h3><div class="table-wrap" style="margin-bottom:1rem"><table><thead><tr><th>Type</th><th>Topic</th><th>Level</th><th>Marks</th><th>Question</th></tr></thead><tbody>' +
+          (s.questions.map((q) => '<tr><td>' + esc(TYPES[q.type]) + '</td><td>' + esc(q.topic) + '</td><td>' + esc(App.levelName(q.difficulty)) + '</td><td class="mono">' + q.marks + '</td><td class="text-cell"><div class="clamp">' + esc(q.text) + '</div></td></tr>').join('') ||
             '<tr><td colspan="5" class="muted">No questions drawn.</td></tr>') + '</tbody></table></div>').join('');
       App.modal.open({ title: 'Sample paper', wide: true, body: body, actions: [{ label: 'Close', kind: 'primary', onClick: () => App.modal.close() }] });
     } catch (e) { showError(e.message); }
