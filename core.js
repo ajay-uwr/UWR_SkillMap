@@ -15,6 +15,9 @@
   };
   App.fromLocalInput = (v) => (v ? new Date(v).getTime() : 0);
 
+  App.LEVEL = { easy: 'Beginner', medium: 'Intermediate', hard: 'Advanced' };
+  App.levelName = (d) => App.LEVEL[d] || d;
+
   const BADGE = { approved: 'ok', published: 'ok', draft: 'warn', closed: 'info', archived: '', owner: 'info', creator: 'info', reviewer: 'info', candidate: '' };
   App.badge = (s) => '<span class="badge ' + (BADGE[s] || '') + '">' + App.esc(s) + '</span>';
 
